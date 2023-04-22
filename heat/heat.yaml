@@ -185,6 +185,12 @@ resources:
         get_resource: seed_userdata
 
   seed_userdata:
+    type: "OS::Heat::MultipartMime"
+    properties:
+      parts:
+        - config: {get_resource: seed_cloud_config}
+
+  seed_cloud_config:
     type: OS::Heat::CloudConfig
     properties:
       cloud_config:
@@ -227,28 +233,10 @@ resources:
                 apt-get -qy purge unattended-upgrades
                 # install default package
                 apt-get -qqy update
-                apt-get -qy install curl git wget file sudo jq bzip2 unzip zip jq
+                apt-get -qy install curl git wget file sudo jq bzip2 unzip zip jq ntp
+                systemctl restart ntp
                 apt-get -qy install python-is-python3 pypy3 python3 python3-dev \
-                    python3-pip python3-venv libpython3.9 python3-apt \
-                    python3-openstackclient
-                # install terraform
-                export TERRAFORM_VERSION=$terraform_version
-                export TERRAFORM_DOWNLOAD_URL=https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
-                export TERRAFORM_PACKAGE=$(basename $TERRAFORM_DOWNLOAD_URL)
-                export TERRAFORM_NAME=terraform
-                ( cd /tmp &&
-                  curl -Ls -O ${TERRAFORM_DOWNLOAD_URL} \
-                    && unzip -p "$TERRAFORM_PACKAGE" > $TERRAFORM_NAME \
-                    && rm -rf "$TERRAFORM_PACKAGE" \
-                    && chmod +x $TERRAFORM_NAME
-                  sudo mv $TERRAFORM_NAME /usr/local/bin
-                )
-                # install pip requirements
-                pip install 'ansible==$ansible_version' 'python-heatclient' 'python-octaviaclient'
-                # check
-                terraform version
-                openstack --version
-                ansible --version
+                    python3-pip python3-venv libpython3.9 python3-apt
                 # Add authorized_keys to debian account
                 (
                     HOME=/home/debian
@@ -272,14 +260,77 @@ resources:
               params:
                 $http_proxy: { get_param: http_proxy }
                 $no_proxy: { get_param: no_proxy }
-                $terraform_version: { get_param: terraform_version }
-                $ansible_version: { get_param: ansible_version }
                 $ssh_authorized_keys: { get_param: ssh_authorized_keys }
           owner: root:root
           permissions: "0755"
-
+        - path: /root/generate-teleport.sh
+          owner: root:root
+          permissions: "0755"
+          content:
+            str_replace:
+              template: |
+                #!/bin/bash
+                set -e -o pipefail
+                echo "# RUNNING: $(dirname $0)/$(basename $0)"
+                # generate script
+                script="teleport-install.sh"
+                cat <<'EOF_SCRIPT' > /home/debian/${script}
+                #!/bin/bash
+                set -x -e -o pipefail
+                function clean() {
+                    ret=$?
+                    if [ "$ret" -gt 0 ] ;then
+                        echo "FAILURE $0: $ret"
+                    else
+                        echo "SUCCESS $0: $ret"
+                    fi
+                    exit $ret
+                }
+                trap clean EXIT QUIT KILL
+                [ -f /home/debian/proxy.sh ] && source /home/debian/proxy.sh
+                SYSTEM_ARCH=amd64
+                TELEPORT_VERSION=v12.2.4
+                #
+                echo "Install teleport"
+                curl -LO https://get.gravitational.com/teleport-$TELEPORT_VERSION-linux-$SYSTEM_ARCH-bin.tar.gz.sha256
+                curl -LO https://cdn.teleport.dev/teleport-$TELEPORT_VERSION-linux-$SYSTEM_ARCH-bin.tar.gz
+                shasum -a 256 -c teleport-$TELEPORT_VERSION-linux-$SYSTEM_ARCH-bin.tar.gz.sha256
+                tar -xvf teleport-$TELEPORT_VERSION-linux-$SYSTEM_ARCH-bin.tar.gz
+                cd teleport
+                sudo ./install
+                #
+                sudo openssl req -x509 -nodes -newkey rsa:4096 \
+                -keyout /var/lib/teleport/teleport.key \
+                -out /var/lib/teleport/teleport.pem -sha256 -days 3650 \
+                -subj "/C=FR/ST=PAris/O=Random/OU=Org/CN=*.private.local"
+                #
+                sudo teleport configure -o /etc/teleport.yaml  \
+                    --cluster-name=private.local \
+                    --public-addr=$floating_ip:443 \
+                    --cert-file=/var/lib/teleport/teleport.pem \
+                    --key-file=/var/lib/teleport/teleport.key
+                #
+                echo "Start teleport"
+                sudo teleport install systemd -o /etc/systemd/system/teleport.service
+                sudo systemctl enable teleport
+                sudo systemctl start teleport
+                sleep 10
+                #
+                echo "Add user"
+                sudo tctl users add teleport-admin --roles=editor,access --logins=root,debian
+                EOF_SCRIPT
+                # run script
+                echo "# run /home/debian/${script}"
+                chmod +x /home/debian/${script}
+                /home/debian/${script}
+                echo "# end /home/debian/${script}"
+              params:
+                $http_proxy: { get_param: http_proxy }
+                $no_proxy: { get_param: no_proxy }
+                $floating_ip: { get_attr: [ seed_floating_ip, floating_ip_address ] }
         runcmd:
           - /root/launch.sh
+          - /root/generate-teleport.sh
 
   seed_port:
     type: OS::Neutron::Port
@@ -293,13 +344,16 @@ resources:
       - interface_admin
       - interface_services
 
+  seed_floating_ip_association:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_resource: seed_floating_ip }
+      port_id: { get_resource: seed_port }
+
   seed_floating_ip:
     type: OS::Neutron::FloatingIP
-    depends_on:
-      - seed_instance
     properties:
       floating_network: { get_param: fip_admin_net }
-      port_id: { get_resource: seed_port }
 
   seed_security_group:
     type: OS::Neutron::SecurityGroup

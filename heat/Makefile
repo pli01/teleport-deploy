@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 HEAT_TEMPLATE   := heat.yaml
 HEAT_PARAM      := param/mycloud.yaml
-HEAT_STACK_NAME := bootstrap
+HEAT_STACK_NAME := seed
 HEAT_OPT :=
 export 
 
