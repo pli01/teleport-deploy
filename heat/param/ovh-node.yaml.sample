@@ -1,0 +1,18 @@
+parameter_defaults:
+  target_hostname: "proxy.teleport.mydomain"
+  ca_pins: "sha256:XXXXXXXX"
+  teleport_args: "--insecure"
+  labels: "env=test cloud=ovh"
+  dns_nameservers: ['213.186.33.99']
+  fip_admin_net: Ext-Net
+  fip_apps_net: Ext-Net
+  fip_services_net: Ext-Net
+  host_routes: [
+        { "destination": '0.0.0.0/0', "nexthop": '192.168.2.1'}
+      ]
+  keypair_name: my-keypair
+  keypair_public_key: "ssh-rsa AAAAXXX"
+  seed_image: "Debian 11"
+  seed_flavor: s1-2
+  seed_vol_type: classic
+  seed_vol_size: 10

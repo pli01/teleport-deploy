@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 HEAT_TEMPLATE   := heat.yaml
 HEAT_PARAM      := param/mycloud.yaml
-HEAT_STACK_NAME := seed
+HEAT_STACK_NAME := teleport
 HEAT_OPT :=
 export 
 
