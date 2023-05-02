@@ -58,12 +58,6 @@ parameters:
   no_proxy:
     type: string
     default: ""
-  terraform_version:
-    type: string
-    default: "1.3.6"
-  ansible_version:
-    type: string
-    default: "6.5.*"
   ssh_authorized_keys:
     type: json
     description: >
@@ -72,6 +66,16 @@ parameters:
          { "user":"myuser2", "key":"ecdsa-sha2-nistp256...."}
       ]
     default: []
+  target_hostname:
+    type: string
+  ca_pins:
+    type: string
+  teleport_args:
+    type: string
+  labels:
+    type: string
+  join_token:
+    type: string
 
 resources:
   #
@@ -174,6 +178,14 @@ resources:
       - seed_root_vol
       - seed_keypair
     properties:
+      name:
+        str_replace:
+          template: node-$stack_name-$stack_id
+          params:
+            $stack_id:
+              get_param: OS::stack_id
+            $stack_name:
+              get_param: OS::stack_name
       block_device_mapping: [{ device_name: "vda", volume_id: { get_resource: seed_root_vol }, delete_on_termination: "true" }]
       flavor: { get_param: seed_flavor }
       key_name: { get_resource: seed_keypair }
@@ -189,6 +201,109 @@ resources:
     properties:
       parts:
         - config: {get_resource: seed_cloud_config}
+        - config: {get_resource: seed_script}
+
+  seed_script:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: ungrouped
+      config:
+        str_replace:
+          params:
+            $target_hostname: { get_param: target_hostname }
+            $ca_pins: { get_param: ca_pins }
+            $teleport_args: { get_param: teleport_args }
+            $labels: { get_param: labels }
+            $join_token: { get_param: join_token }
+          template: |
+             #!/bin/bash
+             set -euo pipefail
+             
+             HOSTNAME="$(hostname -s)"
+             MACHINE_ID="$(cat /etc/machine-id)"
+             ALIVE_CHECK_DELAY=${ALIVE_CHECK_DELAY:-3}
+             TELEPORT_VERSION=${TELEPORT_VERSION:-12.2.5}
+             TELEPORT_PACKAGE_NAME="teleport=${TELEPORT_VERSION}"
+             REPO_CHANNEL="${REPO_CHANNEL:-}"
+             TARGET_HOSTNAME="$target_hostname"
+             TARGET_PORT="${TARGET_PORT:-443}"
+             JOIN_TOKEN="$join_token"
+             CA_PINS="$ca_pins"
+             # LABELS="env=test foo=bar"
+             LABELS=$labels
+             TELEPORT_ARGS="$teleport_args"
+             
+             if [[ "${REPO_CHANNEL}" == "" ]]; then
+                     # By default, use the current version's channel.
+                     REPO_CHANNEL=stable/v"${TELEPORT_VERSION//.*/}"
+             fi
+             
+             # install
+             umask 0022
+             apt-get -qy update
+             apt-get -qy install apt-transport-https gnupg -y
+             curl https://apt.releases.teleport.dev/gpg \
+               -o /usr/share/keyrings/teleport-archive-keyring.asc
+             source /etc/os-release
+             echo "deb [signed-by=/usr/share/keyrings/teleport-archive-keyring.asc] \
+               https://apt.releases.teleport.dev/${ID?} ${VERSION_CODENAME?} ${REPO_CHANNEL}" \
+               | tee /etc/apt/sources.list.d/teleport.list > /dev/null
+             
+             apt-get -qy update
+             apt-get -qy install ${TELEPORT_PACKAGE_NAME}
+             
+             systemctl stop teleport.service || true
+             
+             # configure
+             cat <<EOF | tee /etc/teleport.yaml
+             version: v3
+             teleport:
+               nodename: ${HOSTNAME}
+               data_dir: /var/lib/teleport
+               join_params:
+                 token_name: ${JOIN_TOKEN}
+                 method: token
+               proxy_server: ${TARGET_HOSTNAME}:${TARGET_PORT}
+               log:
+                 output: stderr
+                 severity: INFO
+                 format:
+                   output: text
+               ca_pin: ${CA_PINS}
+               diag_addr: ""
+             auth_service:
+               enabled: "no"
+             ssh_service:
+               enabled: "yes"
+               labels:
+                 teleport.internal/resource-id: ${MACHINE_ID}
+             $( for i in ${LABELS}; do
+               KEY=${i%=*};
+               VAL=${i#*=};
+               echo "    $KEY:" "$VAL";
+             done)
+               commands:
+               - name: hostname
+                 command: [hostname]
+                 period: 1m0s
+             proxy_service:
+               enabled: "no"
+               https_keypairs: []
+               https_keypairs_reload_interval: 0s
+               acme: {}
+             EOF
+             
+             # enable and start
+             sed -i -e 's/^\(ExecStart=.*start\)/\1 $TELEPORT_ARGS /g'  /lib/systemd/system/teleport.service
+             
+             if [ ! -f "/etc/default/teleport" ] || ! grep "^TELEPORT_ARGS" /etc/default/teleport ; then
+                echo "TELEPORT_ARGS=\"${TELEPORT_ARGS} \"" | tee /etc/default/teleport
+             fi
+             
+             systemctl enable teleport
+             systemctl start teleport
+             sleep ${ALIVE_CHECK_DELAY}
+             systemctl status teleport
 
   seed_cloud_config:
     type: OS::Heat::CloudConfig
@@ -274,6 +389,7 @@ resources:
                 echo "# RUNNING: $(dirname $0)/$(basename $0)"
                 # generate script
                 script="teleport-install.sh"
+                exit 0
                 cat <<'EOF_SCRIPT' > /home/debian/${script}
                 #!/bin/bash
                 set -x -e -o pipefail
