@@ -1,5 +1,5 @@
 ---
-heat_template_version: 2016-04-08
+heat_template_version: 2016-10-14
 
 description: Deploy stack
 
@@ -66,16 +66,16 @@ parameters:
          { "user":"myuser2", "key":"ecdsa-sha2-nistp256...."}
       ]
     default: []
-  target_hostname:
+
+  floating_ip_id:
     type: string
-  ca_pins:
+    default: ""
+  floating_ip:
     type: string
-  teleport_args:
-    type: string
-  labels:
-    type: string
-  join_token:
-    type: string
+    default: ""
+
+conditions:
+  use_floating_ip_id: { equals: [{get_param: floating_ip_id}, ''] }
 
 resources:
   #
@@ -178,14 +178,6 @@ resources:
       - seed_root_vol
       - seed_keypair
     properties:
-      name:
-        str_replace:
-          template: node-$stack_name-$stack_id
-          params:
-            $stack_id:
-              get_param: OS::stack_id
-            $stack_name:
-              get_param: OS::stack_name
       block_device_mapping: [{ device_name: "vda", volume_id: { get_resource: seed_root_vol }, delete_on_termination: "true" }]
       flavor: { get_param: seed_flavor }
       key_name: { get_resource: seed_keypair }
@@ -201,109 +193,6 @@ resources:
     properties:
       parts:
         - config: {get_resource: seed_cloud_config}
-        - config: {get_resource: seed_script}
-
-  seed_script:
-    type: OS::Heat::SoftwareConfig
-    properties:
-      group: ungrouped
-      config:
-        str_replace:
-          params:
-            $target_hostname: { get_param: target_hostname }
-            $ca_pins: { get_param: ca_pins }
-            $teleport_args: { get_param: teleport_args }
-            $labels: { get_param: labels }
-            $join_token: { get_param: join_token }
-          template: |
-             #!/bin/bash
-             set -euo pipefail
-             
-             HOSTNAME="$(hostname -s)"
-             MACHINE_ID="$(cat /etc/machine-id)"
-             ALIVE_CHECK_DELAY=${ALIVE_CHECK_DELAY:-3}
-             TELEPORT_VERSION=${TELEPORT_VERSION:-12.3.1}
-             TELEPORT_PACKAGE_NAME="teleport=${TELEPORT_VERSION}"
-             REPO_CHANNEL="${REPO_CHANNEL:-}"
-             TARGET_HOSTNAME="$target_hostname"
-             TARGET_PORT="${TARGET_PORT:-443}"
-             JOIN_TOKEN="$join_token"
-             CA_PINS="$ca_pins"
-             # LABELS="env=test foo=bar"
-             LABELS="$labels"
-             TELEPORT_ARGS="$teleport_args"
-             
-             if [[ "${REPO_CHANNEL}" == "" ]]; then
-                     # By default, use the current version's channel.
-                     REPO_CHANNEL=stable/v"${TELEPORT_VERSION//.*/}"
-             fi
-             
-             # install
-             umask 0022
-             apt-get -qy update
-             apt-get -qy install apt-transport-https gnupg -y
-             curl https://apt.releases.teleport.dev/gpg \
-               -o /usr/share/keyrings/teleport-archive-keyring.asc
-             source /etc/os-release
-             echo "deb [signed-by=/usr/share/keyrings/teleport-archive-keyring.asc] \
-               https://apt.releases.teleport.dev/${ID?} ${VERSION_CODENAME?} ${REPO_CHANNEL}" \
-               | tee /etc/apt/sources.list.d/teleport.list > /dev/null
-             
-             apt-get -qy update
-             apt-get -qy install ${TELEPORT_PACKAGE_NAME}
-             
-             systemctl stop teleport.service || true
-             
-             # configure
-             cat <<EOF | tee /etc/teleport.yaml
-             version: v3
-             teleport:
-               nodename: ${HOSTNAME}
-               data_dir: /var/lib/teleport
-               join_params:
-                 token_name: ${JOIN_TOKEN}
-                 method: token
-               proxy_server: ${TARGET_HOSTNAME}:${TARGET_PORT}
-               log:
-                 output: stderr
-                 severity: INFO
-                 format:
-                   output: text
-               ca_pin: ${CA_PINS}
-               diag_addr: ""
-             auth_service:
-               enabled: "no"
-             ssh_service:
-               enabled: "yes"
-               labels:
-                 teleport.internal/resource-id: ${MACHINE_ID}
-             $( for i in ${LABELS}; do
-               KEY=${i%=*};
-               VAL=${i#*=};
-               echo "    $KEY:" "$VAL";
-             done)
-               commands:
-               - name: hostname
-                 command: [hostname]
-                 period: 1m0s
-             proxy_service:
-               enabled: "no"
-               https_keypairs: []
-               https_keypairs_reload_interval: 0s
-               acme: {}
-             EOF
-             
-             # enable and start
-             sed -i -e 's/^\(ExecStart=.*start\)/\1 $TELEPORT_ARGS /g'  /lib/systemd/system/teleport.service
-             
-             if [ ! -f "/etc/default/teleport" ] || ! grep "^TELEPORT_ARGS" /etc/default/teleport ; then
-                echo "TELEPORT_ARGS=\"${TELEPORT_ARGS} \"" | tee /etc/default/teleport
-             fi
-             
-             systemctl enable teleport
-             systemctl start teleport
-             sleep ${ALIVE_CHECK_DELAY}
-             systemctl status teleport
 
   seed_cloud_config:
     type: OS::Heat::CloudConfig
@@ -378,8 +267,95 @@ resources:
                 $ssh_authorized_keys: { get_param: ssh_authorized_keys }
           owner: root:root
           permissions: "0755"
+        - path: /root/generate-teleport.sh
+          owner: root:root
+          permissions: "0755"
+          content:
+            str_replace:
+              template: |
+                #!/bin/bash
+                set -e -o pipefail
+                echo "# RUNNING: $(dirname $0)/$(basename $0)"
+                # generate script
+                script="teleport-install.sh"
+                cat <<'EOF_SCRIPT' > /home/debian/${script}
+                #!/bin/bash
+                set -x -e -o pipefail
+                function clean() {
+                    ret=$?
+                    if [ "$ret" -gt 0 ] ;then
+                        echo "FAILURE $0: $ret"
+                    else
+                        echo "SUCCESS $0: $ret"
+                    fi
+                    exit $ret
+                }
+                trap clean EXIT QUIT KILL
+                [ -f /home/debian/proxy.sh ] && source /home/debian/proxy.sh
+                TELEPORT_VERSION=${TELEPORT_VERSION:-12.3.1}
+                TELEPORT_PACKAGE_NAME="teleport=${TELEPORT_VERSION}"
+                REPO_CHANNEL="${REPO_CHANNEL:-}"
+                
+                if [[ "${REPO_CHANNEL}" == "" ]]; then
+                        # By default, use the current version's channel.
+                        REPO_CHANNEL=stable/v"${TELEPORT_VERSION//.*/}"
+                fi
+                
+                # install
+                umask 0022
+                echo "Install teleport"
+                apt-get -qy update
+                apt-get -qy install apt-transport-https gnupg -y
+                curl https://apt.releases.teleport.dev/gpg \
+                  -o /usr/share/keyrings/teleport-archive-keyring.asc
+                source /etc/os-release
+                echo "deb [signed-by=/usr/share/keyrings/teleport-archive-keyring.asc] \
+                  https://apt.releases.teleport.dev/${ID?} ${VERSION_CODENAME?} ${REPO_CHANNEL}" \
+                  | tee /etc/apt/sources.list.d/teleport.list > /dev/null
+                
+                apt-get -qy update
+                apt-get -qy install ${TELEPORT_PACKAGE_NAME}
+                #
+                exit 0
+                #
+                sudo openssl req -x509 -nodes -newkey rsa:4096 \
+                -keyout /var/lib/teleport/teleport.key \
+                -out /var/lib/teleport/teleport.pem -sha256 -days 3650 \
+                -subj "/C=FR/ST=PAris/O=Random/OU=Org/CN=*.private.local"
+                #
+                sudo teleport configure -o /etc/teleport.yaml  \
+                    --cluster-name=private.local \
+                    --public-addr=$floating_ip:443 \
+                    --cert-file=/var/lib/teleport/teleport.pem \
+                    --key-file=/var/lib/teleport/teleport.key
+                #
+                echo "Start teleport"
+                sudo teleport install systemd -o /etc/systemd/system/teleport.service
+                sudo systemctl enable teleport
+                sudo systemctl start teleport
+                sleep 10
+                #
+                echo "Add user"
+                sudo tctl users add teleport-admin --roles=editor,access --logins=root,debian
+                EOF_SCRIPT
+                # run script
+                echo "# run /home/debian/${script}"
+                chmod +x /home/debian/${script}
+                cd /home/debian
+                /home/debian/${script}
+                echo "# end /home/debian/${script}"
+              params:
+                $http_proxy: { get_param: http_proxy }
+                $no_proxy: { get_param: no_proxy }
+                $floating_ip: # { get_attr: [ seed_floating_ip, floating_ip_address ] }
+                  if:
+                    - use_floating_ip_id
+                    - get_attr: [ seed_floating_ip, floating_ip_address ]
+                    - get_param: floating_ip
+
         runcmd:
           - /root/launch.sh
+          - /root/generate-teleport.sh
 
   seed_port:
     type: OS::Neutron::Port
@@ -396,13 +372,19 @@ resources:
   seed_floating_ip_association:
     type: OS::Neutron::FloatingIPAssociation
     properties:
-      floatingip_id: { get_resource: seed_floating_ip }
       port_id: { get_resource: seed_port }
+      floatingip_id:
+        if:
+          - use_floating_ip_id
+          - get_resource: seed_floating_ip
+          - get_param: floating_ip_id
 
   seed_floating_ip:
+    condition:  use_floating_ip_id
     type: OS::Neutron::FloatingIP
     properties:
       floating_network: { get_param: fip_admin_net }
+
 
   seed_security_group:
     type: OS::Neutron::SecurityGroup
@@ -429,6 +411,11 @@ resources:
           protocol: tcp
           port_range_min: 443
           port_range_max: 443
+        - remote_ip_prefix: 0.0.0.0/0
+          direction: ingress
+          protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
   seed_root_vol:
     type: OS::Cinder::Volume
     properties:
@@ -454,9 +441,9 @@ outputs:
   seed_private_ip:
     description: seed private IP address
     value: { get_attr: [ seed_instance, first_address ] }
-  seed_public_ip:
-    description: seed public IP address
-    value: { get_attr: [ seed_floating_ip, floating_ip_address ] }
+#  seed_public_ip:
+#    description: seed public IP address
+#    value: { get_attr: [ seed_floating_ip, floating_ip_address ] }
   seed_instance_id:
     description: seed nova ressource id
     value: { get_resource: seed_instance }

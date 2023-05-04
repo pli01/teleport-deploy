@@ -15,19 +15,32 @@ export http_proxy="${http_proxy:-}"
 export https_proxy="${https_proxy:-}"
 export no_proxy="${no_proxy:-}"
 
-SYSTEM_ARCH=amd64
-TELEPORT_VERSION=v12.2.5
 export cluster_name="${cluster_name:-private.local}"
 export floating_ip="${floating_ip:-}"
 
-#
-echo "Install teleport"
-curl -LO https://get.gravitational.com/teleport-$TELEPORT_VERSION-linux-$SYSTEM_ARCH-bin.tar.gz.sha256
-curl -LO https://cdn.teleport.dev/teleport-$TELEPORT_VERSION-linux-$SYSTEM_ARCH-bin.tar.gz
-shasum -a 256 -c teleport-$TELEPORT_VERSION-linux-$SYSTEM_ARCH-bin.tar.gz.sha256
-tar -xvf teleport-$TELEPORT_VERSION-linux-$SYSTEM_ARCH-bin.tar.gz
-cd teleport
-sudo ./install
+TELEPORT_VERSION=${TELEPORT_VERSION:-12.3.1}
+TELEPORT_PACKAGE_NAME="teleport=${TELEPORT_VERSION}"
+REPO_CHANNEL="${REPO_CHANNEL:-}"
+
+if [[ "${REPO_CHANNEL}" == "" ]]; then
+        # By default, use the current version's channel.
+        REPO_CHANNEL=stable/v"${TELEPORT_VERSION//.*/}"
+fi
+
+# install
+umask 0022
+apt-get -qy update
+apt-get -qy install apt-transport-https gnupg -y
+curl https://apt.releases.teleport.dev/gpg \
+  -o /usr/share/keyrings/teleport-archive-keyring.asc
+source /etc/os-release
+echo "deb [signed-by=/usr/share/keyrings/teleport-archive-keyring.asc] \
+  https://apt.releases.teleport.dev/${ID?} ${VERSION_CODENAME?} ${REPO_CHANNEL}" \
+  | tee /etc/apt/sources.list.d/teleport.list > /dev/null
+
+apt-get -qy update
+apt-get -qy install ${TELEPORT_PACKAGE_NAME}
+
 #
 sudo openssl req -x509 -nodes -newkey rsa:4096 \
 -keyout /var/lib/teleport/teleport.key \
@@ -41,7 +54,6 @@ sudo teleport configure -o /etc/teleport.yaml  \
     --key-file=/var/lib/teleport/teleport.key
 #
 echo "Start teleport"
-sudo teleport install systemd -o /etc/systemd/system/teleport.service
 sudo systemctl enable teleport
 sudo systemctl start teleport
 sleep 10

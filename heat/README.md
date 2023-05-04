@@ -14,7 +14,11 @@ Prereq:
 # set your parameter file in param/mycloud.yaml
 # deploy
 cd heat
+# to allocate a FIP
 make HEAT_PARAM=param/mycloud.yaml
+
+# to reuse a reserved FIP
+make create HEAT_PARAM=param/mycloud.yaml HEAT_STACK_NAME=teleport-proxy HEAT_TEMPLATE=teleport.yaml   HEAT_OPT="--parameter floating_ip_id=ZZZZ-EEEE-YYYY-DDDD-XXXXX --parameter floating_ip=AA.BB.CC.DD"
 ```
 
 ## Register node against a teleport proxy
@@ -28,6 +32,6 @@ make HEAT_PARAM=param/mycloud.yaml
 ```
 
 ```
-# to deploy teleport node with a join_token
+# to deploy a teleport node with a join_token
 make create HEAT_PARAM=param/mycloud-node.yaml HEAT_STACK_NAME=node HEAT_TEMPLATE=node.yaml HEAT_OPT="--parameter join_token=$JOIN_TOKEN"
 ```
