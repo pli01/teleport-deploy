@@ -84,6 +84,7 @@ if [ ! -f "/etc/default/teleport" ] || ! grep "^TELEPORT_ARGS" /etc/default/tele
    echo "TELEPORT_ARGS=\"${TELEPORT_ARGS} \"" | tee /etc/default/teleport
    if [[ -n "$http_proxy" ]]; then
       echo "HTTP_PROXY=\"$http_proxy\"" | tee -a /etc/default/teleport
+      echo "HTTPS_PROXY=\"$http_proxy\"" | tee -a /etc/default/teleport
    fi
    if [[ -n "$no_proxy" ]]; then
       echo "NO_PROXY=\"$no_proxy\"" | tee -a /etc/default/teleport
