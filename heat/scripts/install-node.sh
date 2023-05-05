@@ -14,6 +14,8 @@ CA_PINS="${CA_PINS:?CA_PINS}"
 LABELS="${LABELS:-}"
 REPO_CHANNEL="${REPO_CHANNEL:-}"
 TELEPORT_ARGS="${TELEPORT_ARGS:-}"
+http_proxy="${http_proxy:-}"
+no_proxy="${no_proxy:-}"
 
 if [[ "${REPO_CHANNEL}" == "" ]]; then
         # By default, use the current version's channel.
@@ -80,6 +82,12 @@ sed -i -e 's/^\(ExecStart=.*start\)/\1 $TELEPORT_ARGS /g'  /lib/systemd/system/t
 
 if [ ! -f "/etc/default/teleport" ] || ! grep "^TELEPORT_ARGS" /etc/default/teleport ; then
    echo "TELEPORT_ARGS=\"${TELEPORT_ARGS} \"" | tee /etc/default/teleport
+   if [[ -n "$http_proxy" ]]; then
+      echo "HTTP_PROXY=\"$http_proxy\"" | tee -a /etc/default/teleport
+   fi
+   if [[ -n "$no_proxy" ]]; then
+      echo "NO_PROXY=\"$no_proxy\"" | tee -a /etc/default/teleport
+   fi
 fi
 
 systemctl enable teleport

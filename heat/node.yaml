@@ -210,6 +210,8 @@ resources:
       config:
         str_replace:
           params:
+            $http_proxy: { get_param: http_proxy }
+            $no_proxy: { get_param: no_proxy }
             $target_hostname: { get_param: target_hostname }
             $ca_pins: { get_param: ca_pins }
             $teleport_args: { get_param: teleport_args }
@@ -298,6 +300,12 @@ resources:
              
              if [ ! -f "/etc/default/teleport" ] || ! grep "^TELEPORT_ARGS" /etc/default/teleport ; then
                 echo "TELEPORT_ARGS=\"${TELEPORT_ARGS} \"" | tee /etc/default/teleport
+                if [[ -n "$http_proxy" ]]; then
+                   echo "HTTP_PROXY=\"$http_proxy\"" | tee -a /etc/default/teleport
+                fi
+                if [[ -n "$no_proxy" ]]; then
+                   echo "NO_PROXY=\"$no_proxy\"" | tee -a /etc/default/teleport
+                fi
              fi
              
              systemctl enable teleport
