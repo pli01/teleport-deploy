@@ -1,0 +1,15 @@
+kind: user
+version: v2
+metadata:
+  name: teleport-admin
+spec:
+  roles:
+  - access
+  - editor
+  - admin
+  traits:
+    logins:
+    - root
+    - debian
+    - cloudadm
+    - ubuntu
