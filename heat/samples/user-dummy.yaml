@@ -1,0 +1,10 @@
+kind: user
+version: v2
+metadata:
+  name: dummy@domain
+spec:
+  roles:
+  - role-test-ovh
+  traits:
+    logins:
+    - debian

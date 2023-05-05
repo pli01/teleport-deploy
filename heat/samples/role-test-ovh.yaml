@@ -1,0 +1,20 @@
+kind: role
+version: v6
+metadata:
+  description: test ovh
+  name: role-test-ovh
+spec:
+  allow:
+    logins:
+    - 'debian'
+    - '{{internal.logins}}'
+    node_labels:
+      'env': 'test'
+      'cloud': 'ovh'
+    rules:
+    - resources:
+      - session
+      verbs:
+      - read
+      - list
+      where: contains(session.participants, user.metadata.name)
