@@ -39,14 +39,16 @@ apt-get -qy install ${TELEPORT_PACKAGE_NAME}
 systemctl stop teleport.service || true
 
 # configure
+echo "${JOIN_TOKEN}" > /var/lib/teleport/token
+chmod 600 /var/lib/teleport/token
 cat <<EOF | tee /etc/teleport.yaml
 version: v3
 teleport:
   nodename: ${HOSTNAME}
   data_dir: /var/lib/teleport
   join_params:
-    token_name: ${JOIN_TOKEN}
     method: token
+    token_name: /var/lib/teleport/token
   proxy_server: ${TARGET_HOSTNAME}:${TARGET_PORT}
   log:
     output: stderr
@@ -76,6 +78,8 @@ proxy_service:
   https_keypairs_reload_interval: 0s
   acme: {}
 EOF
+
+chmod 600 /etc/teleport.yaml
 
 # enable and start
 sed -i -e 's/^\(ExecStart=.*start\)/\1 $TELEPORT_ARGS /g'  /lib/systemd/system/teleport.service
