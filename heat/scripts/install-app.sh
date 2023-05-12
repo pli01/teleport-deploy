@@ -4,7 +4,7 @@ set -euo pipefail
 HOSTNAME="$(hostname -s)"
 MACHINE_ID="$(cat /etc/machine-id)"
 ALIVE_CHECK_DELAY=${ALIVE_CHECK_DELAY:-3}
-TELEPORT_VERSION=${TELEPORT_VERSION:-12.3.1}
+TELEPORT_VERSION=${TELEPORT_VERSION:-12.3.2}
 TELEPORT_PACKAGE_NAME="teleport=${TELEPORT_VERSION}"
 TARGET_HOSTNAME="${TARGET_HOSTNAME:?TARGET_HOSTNAME}"
 TARGET_PORT="${TARGET_PORT:-443}"
@@ -12,6 +12,8 @@ JOIN_TOKEN="${JOIN_TOKEN:?JOIN_TOKEN}"
 CA_PINS="${CA_PINS:?CA_PINS}"
 # LABELS="env=test foo=bar"
 LABELS="${LABELS:-}"
+APP_NAME="${APP_NAME:?APP_NAME}"
+APP_URI="${APP_NAME:?APP_URI}"
 REPO_CHANNEL="${REPO_CHANNEL:-}"
 TELEPORT_ARGS="${TELEPORT_ARGS:-}"
 http_proxy="${http_proxy:-}"
@@ -41,14 +43,11 @@ systemctl stop teleport.service || true
 # configure
 echo "${JOIN_TOKEN}" > /var/lib/teleport/token
 chmod 600 /var/lib/teleport/token
-cat <<EOF | tee /etc/teleport.yaml
+cat <<EOF|tee /etc/teleport.yaml
 version: v3
 teleport:
-  nodename: ${HOSTNAME}
-  data_dir: /var/lib/teleport
-  join_params:
-    method: token
-    token_name: /var/lib/teleport/token
+  data_dir: /var/lib/teleport-app
+  auth_token: /var/lib/teleport/token
   proxy_server: ${TARGET_HOSTNAME}:${TARGET_PORT}
   log:
     output: stderr
@@ -56,27 +55,28 @@ teleport:
     format:
       output: text
   ca_pin: ${CA_PINS}
-  diag_addr: ""
-auth_service:
-  enabled: "no"
-ssh_service:
-  enabled: "yes"
-  labels:
-    teleport.internal/resource-id: ${MACHINE_ID}
+app_service:
+    enabled: yes
+    debug_app: true
+    apps:
+    - name: "${APP_NAME}"
+      uri: "${APP_URI}"
+      labels:
 $( for i in $LABELS; do
   KEY=${i%=*};
   VAL=${i#*=};
-  echo "    $KEY:" "$VAL";
+  echo "         $KEY:" "$VAL";
 done)
-  commands:
-  - name: hostname
-    command: [hostname]
-    period: 1m0s
+      commands:
+      - name: "os"
+        command: ["/usr/bin/uname"]
+        period: "5s"
+auth_service:
+  enabled: "no"
+ssh_service:
+  enabled: "no"
 proxy_service:
   enabled: "no"
-  https_keypairs: []
-  https_keypairs_reload_interval: 0s
-  acme: {}
 EOF
 
 chmod 600 /etc/teleport.yaml
