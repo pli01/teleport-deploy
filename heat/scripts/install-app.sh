@@ -13,7 +13,7 @@ CA_PINS="${CA_PINS:?CA_PINS}"
 # LABELS="env=test foo=bar"
 LABELS="${LABELS:-}"
 APP_NAME="${APP_NAME:?APP_NAME}"
-APP_URI="${APP_NAME:?APP_URI}"
+APP_URI="${APP_URI:?APP_URI}"
 REPO_CHANNEL="${REPO_CHANNEL:-}"
 TELEPORT_ARGS="${TELEPORT_ARGS:-}"
 http_proxy="${http_proxy:-}"
@@ -57,7 +57,7 @@ teleport:
   ca_pin: ${CA_PINS}
 app_service:
     enabled: yes
-    debug_app: true
+    debug_app: false
     apps:
     - name: "${APP_NAME}"
       uri: "${APP_URI}"
