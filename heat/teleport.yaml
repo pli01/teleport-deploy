@@ -74,6 +74,26 @@ parameters:
     type: string
     default: ""
 
+  cloud_user:
+    type: string
+    default: debian
+  docker_install_script:
+    type: string
+    default: ""
+  teleport_install_script:
+    type: string
+    default: ""
+  teleport_config:
+    type: json
+    description: >
+      {
+        "teleport_nodename": "teleport",
+        "teleport_cluster_name": "teleport.mydomain.test",
+        "teleport_external_hostname": "teleport.mydomain.test",
+        "teleport_acme_email_domain": "teleport@mydomain.test",
+        "teleport_node_labels": "env=test role=proxy",
+      }
+
 conditions:
   use_floating_ip_id: { equals: [{get_param: floating_ip_id}, ''] }
 
@@ -193,6 +213,160 @@ resources:
     properties:
       parts:
         - config: {get_resource: seed_cloud_config}
+        - config: {get_resource: seed_config_script}
+        - config: {get_resource: seed_install_default_script}
+        - config: {get_resource: seed_install_teleport_script}
+
+  seed_install_default_script:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: ungrouped
+      config:
+        str_replace:
+           params:
+              $cloud_user: { get_param: cloud_user }
+              $http_proxy: { get_param: http_proxy }
+              $no_proxy: { get_param: no_proxy }
+              $ssh_authorized_keys: { get_param: ssh_authorized_keys }
+           template: |
+              #!/bin/bash
+              set -x -e -o pipefail
+              echo "# RUNNING: $(dirname $0)/$(basename $0)"
+              set -x
+              set -e -o pipefail
+              cloud_user=$cloud_user
+              script_name=deploy-default.sh
+              libdir=/home/$cloud_user
+              [ -f ${libdir}/proxy.sh ] && source ${libdir}/proxy.sh
+              [ -f ${libdir}/config.cfg ] && source ${libdir}/config.cfg
+              echo "## deploy_default configuration"
+              cat <<'EOF' > /home/$cloud_user/$script_name
+              export DEBIAN_FRONTEND=noninteractive
+              # set proxy if defined
+              if [ -n "$http_proxy" ]; then
+                export http_proxy=$http_proxy
+                export https_proxy=$http_proxy
+                export no_proxy=$no_proxy
+              fi
+              # Stop and disable apt-daily upgrade services;
+              systemctl stop apt-daily.timer
+              systemctl stop apt-daily.service
+              systemctl disable apt-daily.timer
+              systemctl disable apt-daily.service
+              systemctl stop apt-daily-upgrade.timer
+              systemctl disable apt-daily-upgrade.timer
+              systemctl disable apt-daily-upgrade.service
+              systemctl kill --kill-who=all apt-daily.service
+              # wait until `apt-get updated` has been killed
+              while ! (systemctl list-units --all apt-daily.service | egrep -q '(dead|failed)')
+              do
+                sleep 1;
+              done
+              apt-get -qy purge unattended-upgrades
+              # install default package
+              apt-get -qqy update
+              apt-get -qy install curl git wget file sudo jq bzip2 unzip zip jq ntp
+              systemctl restart ntp
+              apt-get -qy install python-is-python3 pypy3 python3 python3-dev \
+                  python3-pip python3-venv libpython3.9 python3-apt
+              # Add authorized_keys to debian account
+              (
+                  HOME=/home/debian
+                  if [ ! -d $HOME/.ssh ] ; then mkdir -p $HOME/.ssh ; fi
+                  echo '$ssh_authorized_keys' |  jq -re ".[].key" >> $HOME/.ssh/authorized_keys
+                  chown debian. -R $HOME/.ssh
+              )
+              # Create user account with ssh/authorized_keys
+              (
+                 echo '$ssh_authorized_keys' | \
+                 jq -rce '.[]'|while read data ; do
+                  user=$(echo "$data" |jq -re '.user')
+                  useradd --badnames -k /etc/skel -m -s /bin/bash -U -G sudo $user
+                  mkdir -p /home/$user/.ssh
+                  echo "$data" |jq -re '.key' >> /home/$user/.ssh/authorized_keys
+                  chown $user.$user /home/$user -R
+                done
+              )
+              # Allow sudo group to sudoers without password
+              echo "%sudo ALL=(ALL:ALL) NOPASSWD:ALL" | tee /etc/sudoers.d/00-sudo-users
+              EOF
+              echo "# run /home/$cloud_user/$script_name"
+              chmod +x /home/$cloud_user/$script_name
+              /home/$cloud_user/$script_name
+              echo "## End post installation"
+
+  seed_config_script:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: ungrouped
+      config:
+        str_replace:
+           params:
+              $cloud_user: { get_param: cloud_user }
+              $teleport_install_script: { get_param: teleport_install_script }
+              $teleport_cluster_name: { get_param: [teleport_config, teleport_cluster_name] }
+              $teleport_external_hostname: { get_param: [teleport_config, teleport_external_hostname] }
+              $teleport_acme_email_domain: { get_param: [teleport_config, teleport_acme_email_domain] }
+              $teleport_nodename: { get_param: [teleport_config, teleport_nodename] }
+              $teleport_node_labels: { get_param: [teleport_config, teleport_node_labels] }
+              $teleport_version: { get_param: [teleport_config, teleport_version] }
+           template: |
+              #!/bin/bash
+              cloud_user=$cloud_user
+              libdir=/home/$cloud_user
+              cat <<'EOF' > ${libdir}/config.cfg
+              export cloud_user=$cloud_user
+              # teleport
+              export TELEPORT_INSTALL_SCRIPT="$teleport_install_script"
+              export TELEPORT_VERSION="$teleport_version"
+              export LABELS="$teleport_node_labels"
+              export TELEPORT_NODENAME="$teleport_nodename"
+              export TELEPORT_CLUSTER_NAME="$teleport_cluster_name"
+              export TELEPORT_EXTERNAL_HOSTNAME="$teleport_external_hostname"
+              export TELEPORT_ACME_EMAIL_DOMAIN="$teleport_acme_email_domain"
+              EOF
+
+  seed_install_teleport_script:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: ungrouped
+      config:
+        str_replace:
+           params:
+              $cloud_user: { get_param: cloud_user }
+           template: |
+              #!/bin/bash
+              echo "# RUNNING: $(dirname $0)/$(basename $0)"
+              set -x
+              set -e -o pipefail
+              cloud_user=$cloud_user
+              script_name=deploy-teleport.sh
+              libdir=/home/$cloud_user
+              [ -f ${libdir}/proxy.sh ] && source ${libdir}/proxy.sh
+              [ -f ${libdir}/config.cfg ] && source ${libdir}/config.cfg
+              echo "## $deploy_teleport configuration"
+              cat <<'EOF' > /home/$cloud_user/$script_name
+              #!/bin/bash
+              set -e -o pipefail
+              cloud_user=$cloud_user
+              libdir=/home/$cloud_user
+              [ -f ${libdir}/proxy.sh ] && source ${libdir}/proxy.sh
+              [ -f ${libdir}/config.cfg ] && source ${libdir}/config.cfg
+              cd $libdir
+              export TELEPORT_INSTALL_SCRIPT="${TELEPORT_INSTALL_SCRIPT:?Error TELEPORT_INSTALL_SCRIPT not found}"
+              # if authenticated repo
+              if [ -n "${GITHUB_TOKEN}" ] ; then
+                curl_args=" -H \"Authorization: token ${GITHUB_TOKEN}\" "
+              fi
+              (
+              eval curl -kL -s $curl_args ${TELEPORT_INSTALL_SCRIPT} | \
+               bash
+              ) || exit $?
+              EOF
+              echo "# run /home/$cloud_user/$script_name"
+              chmod +x /home/$cloud_user/$script_name
+              sudo  -E  bash -c /home/$cloud_user/$script_name
+              echo "## End post installation"
 
   seed_cloud_config:
     type: OS::Heat::CloudConfig
@@ -214,148 +388,6 @@ resources:
                 $no_proxy: { get_param: no_proxy }
           owner: debian:debian
           permissions: "0755"
-        - path: /root/launch.sh
-          content:
-            str_replace:
-              template: |
-                #!/bin/bash
-                set -x -e -o pipefail
-                export DEBIAN_FRONTEND=noninteractive
-                # set proxy if defined
-                if [ -n "$http_proxy" ]; then
-                  export http_proxy=$http_proxy
-                  export https_proxy=$http_proxy
-                  export no_proxy=$no_proxy
-                fi
-                # Stop and disable apt-daily upgrade services;
-                systemctl stop apt-daily.timer
-                systemctl disable apt-daily.timer
-                systemctl disable apt-daily.service
-                systemctl stop apt-daily-upgrade.timer
-                systemctl disable apt-daily-upgrade.timer
-                systemctl disable apt-daily-upgrade.service
-                apt-get -qy purge unattended-upgrades
-                # install default package
-                apt-get -qqy update
-                apt-get -qy install curl git wget file sudo jq bzip2 unzip zip jq ntp
-                systemctl restart ntp
-                apt-get -qy install python-is-python3 pypy3 python3 python3-dev \
-                    python3-pip python3-venv libpython3.9 python3-apt
-                # Add authorized_keys to debian account
-                (
-                    HOME=/home/debian
-                    if [ ! -d $HOME/.ssh ] ; then mkdir -p $HOME/.ssh ; fi
-                    echo '$ssh_authorized_keys' |  jq -re ".[].key" >> $HOME/.ssh/authorized_keys
-                    chown debian. -R $HOME/.ssh
-                )
-                # Create user account with ssh/authorized_keys
-                (
-                   echo '$ssh_authorized_keys' | \
-                   jq -rce '.[]'|while read data ; do
-                    user=$(echo "$data" |jq -re '.user')
-                    useradd --badnames -k /etc/skel -m -s /bin/bash -U -G sudo $user
-                    mkdir -p /home/$user/.ssh
-                    echo "$data" |jq -re '.key' >> /home/$user/.ssh/authorized_keys
-                    chown $user.$user /home/$user -R
-                  done
-                )
-                # Allow sudo group to sudoers without password
-                echo "%sudo ALL=(ALL:ALL) NOPASSWD:ALL" | tee /etc/sudoers.d/00-sudo-users
-              params:
-                $http_proxy: { get_param: http_proxy }
-                $no_proxy: { get_param: no_proxy }
-                $ssh_authorized_keys: { get_param: ssh_authorized_keys }
-          owner: root:root
-          permissions: "0755"
-        - path: /root/generate-teleport.sh
-          owner: root:root
-          permissions: "0755"
-          content:
-            str_replace:
-              template: |
-                #!/bin/bash
-                set -e -o pipefail
-                echo "# RUNNING: $(dirname $0)/$(basename $0)"
-                # generate script
-                script="teleport-install.sh"
-                cat <<'EOF_SCRIPT' > /home/debian/${script}
-                #!/bin/bash
-                set -x -e -o pipefail
-                function clean() {
-                    ret=$?
-                    if [ "$ret" -gt 0 ] ;then
-                        echo "FAILURE $0: $ret"
-                    else
-                        echo "SUCCESS $0: $ret"
-                    fi
-                    exit $ret
-                }
-                trap clean EXIT QUIT KILL
-                [ -f /home/debian/proxy.sh ] && source /home/debian/proxy.sh
-                TELEPORT_VERSION=${TELEPORT_VERSION:-12.3.1}
-                TELEPORT_PACKAGE_NAME="teleport=${TELEPORT_VERSION}"
-                REPO_CHANNEL="${REPO_CHANNEL:-}"
-                
-                if [[ "${REPO_CHANNEL}" == "" ]]; then
-                        # By default, use the current version's channel.
-                        REPO_CHANNEL=stable/v"${TELEPORT_VERSION//.*/}"
-                fi
-                
-                # install
-                umask 0022
-                echo "Install teleport"
-                apt-get -qy update
-                apt-get -qy install apt-transport-https gnupg -y
-                curl https://apt.releases.teleport.dev/gpg \
-                  -o /usr/share/keyrings/teleport-archive-keyring.asc
-                source /etc/os-release
-                echo "deb [signed-by=/usr/share/keyrings/teleport-archive-keyring.asc] \
-                  https://apt.releases.teleport.dev/${ID?} ${VERSION_CODENAME?} ${REPO_CHANNEL}" \
-                  | tee /etc/apt/sources.list.d/teleport.list > /dev/null
-                
-                apt-get -qy update
-                apt-get -qy install ${TELEPORT_PACKAGE_NAME}
-                #
-                exit 0
-                #
-                sudo openssl req -x509 -nodes -newkey rsa:4096 \
-                -keyout /var/lib/teleport/teleport.key \
-                -out /var/lib/teleport/teleport.pem -sha256 -days 3650 \
-                -subj "/C=FR/ST=PAris/O=Random/OU=Org/CN=*.private.local"
-                #
-                sudo teleport configure -o /etc/teleport.yaml  \
-                    --cluster-name=private.local \
-                    --public-addr=$floating_ip:443 \
-                    --cert-file=/var/lib/teleport/teleport.pem \
-                    --key-file=/var/lib/teleport/teleport.key
-                #
-                echo "Start teleport"
-                sudo teleport install systemd -o /etc/systemd/system/teleport.service
-                sudo systemctl enable teleport
-                sudo systemctl start teleport
-                sleep 10
-                #
-                echo "Add user"
-                sudo tctl users add teleport-admin --roles=editor,access --logins=root,debian
-                EOF_SCRIPT
-                # run script
-                echo "# run /home/debian/${script}"
-                chmod +x /home/debian/${script}
-                cd /home/debian
-                /home/debian/${script}
-                echo "# end /home/debian/${script}"
-              params:
-                $http_proxy: { get_param: http_proxy }
-                $no_proxy: { get_param: no_proxy }
-                $floating_ip: # { get_attr: [ seed_floating_ip, floating_ip_address ] }
-                  if:
-                    - use_floating_ip_id
-                    - get_attr: [ seed_floating_ip, floating_ip_address ]
-                    - get_param: floating_ip
-
-        runcmd:
-          - /root/launch.sh
-          - /root/generate-teleport.sh
 
   seed_port:
     type: OS::Neutron::Port
