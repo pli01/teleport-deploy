@@ -14,7 +14,6 @@ trap clean EXIT QUIT KILL
 http_proxy="${http_proxy:-}"
 https_proxy="${https_proxy:-}"
 no_proxy="${no_proxy:-}"
-export HOSTNAME="$(hostname -s)"
 
 export ALIVE_CHECK_DELAY=${ALIVE_CHECK_DELAY:-5}
 export TELEPORT_VERSION=${TELEPORT_VERSION:-12.3.2}
@@ -28,6 +27,7 @@ fi
 
 export TELEPORT_ARGS="${TELEPORT_ARGS:-}"
 
+export TELEPORT_NODENAME="${TELEPORT_NODENAME:?TELEPORT_NODENAME}"
 export TELEPORT_CLUSTER_NAME="${TELEPORT_CLUSTER_NAME:?TELEPORT_CLUSTER_NAME}"
 export TELEPORT_EXTERNAL_HOSTNAME="${TELEPORT_EXTERNAL_HOSTNAME:?TELEPORT_EXTERNAL_HOSTNAME}"
 export TELEPORT_ACME_EMAIL_DOMAIN="${TELEPORT_ACME_EMAIL_DOMAIN:?TELEPORT_ACME_EMAIL_DOMAIN}"
@@ -98,12 +98,12 @@ systemctl stop teleport.service || true
 
 [ -f /etc/teleport.yaml ] && cp -f /etc/teleport.yaml /etc/teleport.yaml.back
 ( envsubst '${TELEPORT_EXTERNAL_HOSTNAME} \
-    ${HOSTNAME} ${TELEPORT_CLUSTER_NAME} ${TELEPORT_ACME_EMAIL_DOMAIN} \
+    ${TELEPORT_NODENAME} ${TELEPORT_CLUSTER_NAME} ${TELEPORT_ACME_EMAIL_DOMAIN} \
     ${NODE_LABELS} \
 ' | tee /etc/teleport.yaml ) <<'EOF'
 version: v3
 teleport:
-  nodename: ${HOSTNAME}
+  nodename: ${TELEPORT_NODENAME}
   data_dir: /var/lib/teleport
   log:
     output: stderr
