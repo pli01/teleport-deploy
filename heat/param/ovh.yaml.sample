@@ -1,4 +1,5 @@
 parameter_defaults:
+  # floating_ip_id: xxxxx-yyyy-zzz-...
   dns_nameservers: ['213.186.33.99']
   fip_admin_net: Ext-Net
   fip_apps_net: Ext-Net
@@ -12,3 +13,12 @@ parameter_defaults:
   seed_flavor: s1-2
   seed_vol_type: classic
   seed_vol_size: 10
+  teleport_install_script: https://raw.githubusercontent.com/pli01/teleport-deploy/main/heat/scripts/install-teleport-nginx.sh
+  teleport_config: {
+     "teleport_nodename": "teleport",
+     "teleport_cluster_name": "teleport.mydomain.test",
+     "teleport_external_hostname": "teleport.mydomain.test",
+     "teleport_acme_email_domain": "teleport@mydomain.test",
+     "teleport_node_labels": "env=test role=proxy",
+  }
+
