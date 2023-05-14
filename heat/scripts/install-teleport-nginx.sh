@@ -143,3 +143,6 @@ sudo systemctl enable teleport
 sudo systemctl start teleport
 sleep ${ALIVE_CHECK_DELAY}
 systemctl status teleport
+
+echo "Create initial user"
+tctl users add teleport-admin --roles=editor,access --logins=root,debian,cloudadm,ubuntu
