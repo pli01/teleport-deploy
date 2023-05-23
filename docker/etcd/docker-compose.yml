@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  etcd-00:
+    image: quay.io/coreos/etcd:${ETCD_VERSION:-v3.5.2}
+    hostname: etcd-00
+    command:
+      - etcd
+    environment:
+      - ETCD_NAME=etcd-00
+      - ETCD_DATA_DIR=data.etcd
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd-00:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd-00:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_CLUSTER=etcd-00=http://etcd-00:2380,etcd-01=http://etcd-01:2380,etcd-02=http://etcd-02:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=${ETCD_INITIAL_CLUSTER_TOKEN:-etcd-cluster-1}
+    volumes:
+      - etcd-00vol:/data.etcd
+    networks:
+      - etcd
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "5"
+    restart: always
+
+  etcd-01:
+    image: quay.io/coreos/etcd:${ETCD_VERSION:-v3.5.2}
+    hostname: etcd-01
+    command:
+      - etcd
+    environment:
+      - ETCD_NAME=etcd-01
+      - ETCD_DATA_DIR=data.etcd
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd-01:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd-01:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_CLUSTER=etcd-00=http://etcd-00:2380,etcd-01=http://etcd-01:2380,etcd-02=http://etcd-02:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=${ETCD_INITIAL_CLUSTER_TOKEN:-etcd-cluster-1}
+    volumes:
+      - etcd-01vol:/data.etcd
+    networks:
+      - etcd
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "5"
+    restart: always
+
+  etcd-02:
+    image: quay.io/coreos/etcd:${ETCD_VERSION:-v3.5.2}
+    hostname: etcd-02
+    command:
+      - etcd
+    environment:
+      - ETCD_NAME=etcd-02
+      - ETCD_DATA_DIR=data.etcd
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd-02:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd-02:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_CLUSTER=etcd-00=http://etcd-00:2380,etcd-01=http://etcd-01:2380,etcd-02=http://etcd-02:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=${ETCD_INITIAL_CLUSTER_TOKEN:-etcd-cluster-1}
+    volumes:
+      - etcd-02vol:/data.etcd
+    networks:
+      - etcd
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "5"
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    hostname: nginx-etcd
+    volumes:
+      - type: bind
+        source: ./nginx/nginx.conf
+        target: /etc/nginx/nginx.conf
+    networks:
+     - etcd
+    ports:
+      - 2379:2379
+    depends_on:
+      - etcd-00
+      - etcd-01
+      - etcd-02
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "5"
+    restart: always
+
+volumes:
+  etcd-00vol:
+    driver: local
+  etcd-01vol:
+    driver: local
+  etcd-02vol:
+    driver: local
+
+networks:
+  etcd:
+    driver: bridge
