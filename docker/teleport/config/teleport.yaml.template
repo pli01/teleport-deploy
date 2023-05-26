@@ -33,3 +33,7 @@ proxy_service:
   acme:
     enabled: "yes"
     email: ${TELEPORT_ACME_EMAIL_DOMAIN}
+  # uncomment if using your own cert or using certbot (disabled acme)
+  # https_cert_file: /etc/letsencrypt/live/${TELEPORT_CLUSTER_NAME}/fullchain.pem
+  # https_key_file: /etc/letsencrypt/live/${TELEPORT_CLUSTER_NAME}/privkey.pem
+

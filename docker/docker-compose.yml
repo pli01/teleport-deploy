@@ -21,7 +21,7 @@ services:
       - teleport
     environment:
       - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
-      - TELEPORT_EXTERNAL_DOMAIN=${TELEPORT_EXTERNAL_DOMAIN:-teleport.mydomain.test}
+      - TELEPORT_EXTERNAL_HOSTNAME=${TELEPORT_EXTERNAL_HOSTNAME:-teleport.mydomain.test}
     logging:
       driver: "json-file"
       options:
@@ -56,14 +56,16 @@ services:
     command: -c "sleep 2 && /usr/bin/dumb-init teleport start -c /etc/teleport/teleport.yaml"
     networks:
      - teleport
-    ports:
-      - 3022
-      - 3023
-      - 3025
-      - 3080
+#    ports:
+#      - 3022
+#      - 3023
+#      - 3025
+#      - 3080
     volumes:
       - ./teleport/config:/etc/teleport
       - ./teleport/data:/var/lib/teleport
+      # uncomment if using certbot
+      #- ./certbot/data:/etc/letsencrypt
     depends_on:
       - configure
 
