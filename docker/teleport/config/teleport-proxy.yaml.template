@@ -1,0 +1,31 @@
+#
+# A Sample Teleport proxy configuration template file.
+#
+version: v3
+teleport:
+  #nodename: teleport-proxy
+  data_dir: /var/lib/teleport
+  log:
+    output: stderr
+    severity: DEBUG
+    format:
+      output: text
+  ca_pin: ""
+  diag_addr: ""
+  auth_server: teleport-auth:3025
+  auth_token: ${TELEPORT_PROXY_TOKEN}
+auth_service:
+  enabled: "no"
+ssh_service:
+  enabled: "no"
+proxy_service:
+  enabled: "yes"
+  web_listen_addr: 0.0.0.0:3080
+  public_addr: ${TELEPORT_CLUSTER_NAME}:443
+  https_keypairs: []
+  https_keypairs_reload_interval: 0s
+  https_cert_file: /etc/letsencrypt/live/${TELEPORT_CLUSTER_NAME}/fullchain.pem
+  https_key_file: /etc/letsencrypt/live/${TELEPORT_CLUSTER_NAME}/privkey.pem
+#  acme:
+#    enabled: "yes"
+#    email: ${TELEPORT_ACME_EMAIL_DOMAIN}

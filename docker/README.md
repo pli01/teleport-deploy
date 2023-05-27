@@ -59,16 +59,20 @@ Destroy
 docker-compose down
 ```
 
-## Deploy multi
+## Deploy multi components
+
 Set your environment variables in `.env`
 ```bash
 TELEPORT_EXTERNAL_HOSTNAME=teleport.mydomain.test
 TELEPORT_CLUSTER_NAME=teleport.mydomain.test
 TELEPORT_ACME_EMAIL_DOMAIN=sample@mydomain.test
 NODE_LABELS="env=test cloud=docker role=proxy"
+# generate random proxy token with openssl
+TELEPORT_PROXY_TOKEN=$(openssl rand -hex  20)
 ```
 
-Generate certificate with certbot/letsencrypt
+Generate certificate with certbot/letsencrypt.
+File are generated in certbot/data/archive and certbot/data/live
 
 ```
 docker-compose -f docker-compose-certbot.yml up -d

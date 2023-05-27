@@ -1,0 +1,26 @@
+#
+# A Sample Teleport auth configuration template file.
+#
+version: v3
+teleport:
+  #nodename: teleport-auth
+  data_dir: /var/lib/teleport
+  log:
+    output: stderr
+    severity: DEBUG
+    format:
+      output: text
+  ca_pin: ""
+  diag_addr: ""
+auth_service:
+  enabled: "yes"
+  listen_addr: 0.0.0.0:3025
+  cluster_name: ${TELEPORT_CLUSTER_NAME}
+  proxy_listener_mode: multiplex
+  tokens:
+    - "node,auth,proxy:${TELEPORT_PROXY_TOKEN}"
+ssh_service:
+  enabled: "no"
+proxy_service:
+  enabled: "no"
+
