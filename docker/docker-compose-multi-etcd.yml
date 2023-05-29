@@ -68,8 +68,9 @@ services:
       - TELEPORT_ACME_EMAIL_DOMAIN=${TELEPORT_ACME_EMAIL_DOMAIN:-sample@mydomain.test}
       - TELEPORT_CLUSTER_NAME=${TELEPORT_CLUSTER_NAME:-teleport.mydomain.test}
       - NODE_LABELS=${NODE_LABELS:-env=test cloud=docker role=proxy}
-      - TELEPORT_CONFIG_TEMPLATE=${TELEPORT_CONFIG_TEMPLATE:-teleport-auth.yaml.template}
+      - TELEPORT_CONFIG_TEMPLATE=${TELEPORT_CONFIG_TEMPLATE:-teleport-auth-etcd.yaml.template}
       - TELEPORT_PROXY_TOKEN=${TELEPORT_PROXY_TOKEN:-foo}
+      - ETCD_URL=${ETCD_URL:-http://localhost:2379}
     networks:
      - teleport
     volumes:
@@ -81,9 +82,9 @@ services:
   teleport-proxy:
     image: public.ecr.aws/gravitational/teleport:${TELEPORT_VERSION:-13.0.2}
       #container_name: teleport-proxy
-    hostname: teleport-proxy
+      #hostname: teleport-proxy
     deploy:
-      replicas: 1
+      replicas: 2
     entrypoint: /bin/sh
     command: -c "sleep 2 && /usr/bin/dumb-init teleport start -c /etc/teleport/teleport-proxy.yaml"
     networks:
@@ -100,22 +101,29 @@ services:
 
   teleport-auth:
     image: public.ecr.aws/gravitational/teleport:${TELEPORT_VERSION:-13.0.2}
-    container_name: teleport-auth
+      #container_name: teleport-auth
       #hostname: teleport-auth
     deploy:
-      replicas: 1
+      replicas: 2
     entrypoint: /bin/sh
-    command: -c "sleep 2 && /usr/bin/dumb-init teleport start -c /etc/teleport/teleport-auth.yaml"
+    command: -c "sleep 2 && /usr/bin/dumb-init teleport start -c /etc/teleport/teleport-auth-etcd.yaml"
     networks:
      - teleport
     volumes:
       - ./teleport/config:/etc/teleport
-      - ./teleport/auth/data:/var/lib/teleport
+      #- ./teleport/auth/data:/var/lib/teleport
+      - ./fluentd:/fluentd
     depends_on:
       - certbot
       - configure-auth
+
+#  fluentd:
+#    extends:
+#      file: docker-compose-fluentd.yml
+#      service: fluentd
 
 networks:
   teleport:
     enable_ipv6: false
     driver: bridge
+

@@ -1,0 +1,13 @@
+version: '3.8'
+networks:
+  teleport:
+    name: docker_teleport
+    external: true
+services:
+  event-handler:
+    image: public.ecr.aws/gravitational/teleport-plugin-event-handler:13.0.3
+    networks:
+     - teleport
+    volumes:
+      - ./fluentd:/fluentd
+      - ./storage:/storage

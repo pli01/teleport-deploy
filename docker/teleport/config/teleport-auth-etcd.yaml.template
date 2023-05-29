@@ -1,0 +1,74 @@
+#
+# A Sample Teleport configuration template file.
+#
+version: v3
+teleport:
+  storage:
+     type: etcd
+     # List of etcd peers to connect to:
+     peers: ["${ETCD_URL}"]
+
+     # Required path to TLS client certificate and key files to connect to etcd.
+     #
+     # To create these, follow
+     # https://coreos.com/os/docs/latest/generate-self-signed-certificates.html
+     # or use the etcd-provided script
+     # https://github.com/etcd-io/etcd/tree/master/hack/tls-setup.
+     #tls_cert_file: /var/lib/teleport/etcd-cert.pem
+     #tls_key_file: /var/lib/teleport/etcd-key.pem
+
+     # Optional file with trusted CA authority
+     # file to authenticate etcd nodes
+     #
+     # If you used the script above to generate the client TLS certificate,
+     # this CA certificate should be one of the other generated files
+     #tls_ca_file: /var/lib/teleport/etcd-ca.pem
+
+     # Alternative password-based authentication, if not using TLS client
+     # certificate.
+     #
+     # See https://etcd.io/docs/v3.4.0/op-guide/authentication/ for setting
+     # up a new user.
+     #username: username
+     #password_file: /mnt/secrets/etcd-pass
+
+     # etcd key (location) where teleport will be storing its state under.
+     # make sure it ends with a '/'!
+     prefix: /teleport/
+
+     # NOT RECOMMENDED: enables insecure etcd mode in which self-signed
+     # certificate will be accepted
+     insecure: true
+
+     # Optionally sets the limit on the client message size.
+     # This is usually used to increase the default which is 2MiB
+     # (1.5MiB server's default + gRPC overhead bytes).
+     # Make sure this does not exceed the value for the etcd
+     # server specified with `--max-request-bytes` (1.5MiB by default).
+     # Keep the two values in sync.
+     #
+     # See https://etcd.io/docs/v3.4.0/dev-guide/limit/ for details
+     #
+     # This bumps the size to 15MiB as an example:
+     etcd_max_client_msg_size_bytes: 15728640
+
+  #nodename: teleport-auth
+  data_dir: /var/lib/teleport
+  log:
+    output: stderr
+    severity: DEBUG
+    format:
+      output: text
+  ca_pin: ""
+  diag_addr: ""
+auth_service:
+  enabled: "yes"
+  listen_addr: 0.0.0.0:3025
+  cluster_name: ${TELEPORT_CLUSTER_NAME}
+  proxy_listener_mode: multiplex
+  tokens:
+    - "node,auth,proxy:${TELEPORT_PROXY_TOKEN}"
+ssh_service:
+  enabled: "no"
+proxy_service:
+  enabled: "no"
