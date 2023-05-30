@@ -1,0 +1,75 @@
+#
+# simple teleport all-in-one stack
+#   - nginx
+#   - configure container (generate teleport config if doesn t exists)
+#   - teleport running all roles (proxy, auth, node) and use acme
+#
+version: '3.8'
+services:
+  nginx:
+    image: nginx:alpine
+    hostname: nginx-teleport
+    volumes:
+      - type: bind
+        source: ./nginx/nginx.conf.template
+        target: /etc/nginx/templates/nginx.conf.template
+    networks:
+     - teleport
+    ports:
+      - 443:443
+    depends_on:
+      - teleport
+    environment:
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+      - TELEPORT_EXTERNAL_HOSTNAME=${TELEPORT_EXTERNAL_HOSTNAME:-teleport.mydomain.test}
+      - TELEPORT_PROXY=${TELEPORT_PROXY:-teleport}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "5"
+    restart: always
+
+  # The configure container starts, generates a config, writes it to
+  # /etc/teleport/teleport.yaml and then immediately exits.
+  configure:
+    image: nginx:alpine
+    container_name: teleport-configure
+    entrypoint: /bin/sh
+    command: -c 'if [ ! -f /etc/teleport/teleport.yaml ]; then /teleport/bin/configure.sh; fi'
+    environment:
+      - TELEPORT_ACME_EMAIL_DOMAIN=${TELEPORT_ACME_EMAIL_DOMAIN:-sample@mydomain.test}
+      - TELEPORT_CLUSTER_NAME=${TELEPORT_CLUSTER_NAME:-teleport.mydomain.test}
+      - NODE_LABELS=${NODE_LABELS:-env=test cloud=docker role=proxy}
+    networks:
+     - teleport
+    volumes:
+      - ./teleport/config:/etc/teleport
+      - ./teleport/bin:/teleport/bin
+
+  # This container depends on the config written by the configure container above, so it
+  # sleeps for a second on startup to allow the configure container to run first.
+  teleport:
+    image: public.ecr.aws/gravitational/teleport:${TELEPORT_VERSION:-13.0.2}
+    container_name: teleport
+    entrypoint: /bin/sh
+    hostname: localhost
+    command: -c "sleep 2 && /usr/bin/dumb-init teleport start -c /etc/teleport/teleport.yaml"
+    networks:
+     - teleport
+#    ports:
+#      - 3022
+#      - 3023
+#      - 3025
+#      - 3080
+    volumes:
+      - ./teleport/config:/etc/teleport
+      - ./teleport/data:/var/lib/teleport
+      # uncomment if using certbot
+      #- ./certbot/data:/etc/letsencrypt
+    depends_on:
+      - configure
+
+networks:
+  teleport:
+    driver: bridge

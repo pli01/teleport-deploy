@@ -1,0 +1,17 @@
+version: '3.8'
+networks:
+  teleport:
+    driver: bridge
+services:
+  fluentd:
+    image: fluent/fluentd:edge
+    hostname: fluentd
+    container_name: fluentd
+    user: "${UID}:${UID}"
+    networks:
+     - teleport
+    ports:
+      - 8888:8888
+    volumes:
+      - ./fluentd:/keys
+      - ./fluentd/fluent.conf:/fluentd/etc/fluent.conf

@@ -1,0 +1,121 @@
+#
+# simple teleport multi component stack
+#   - nginx
+#   - certbot
+#   - configure containers (generate teleport proxy and auth config if doesn t exists)
+#   - teleport proxy (multiple replicas)
+#   - teleport auth with backend file (one replica)
+#
+version: '3.8'
+services:
+  # generate certficate
+  certbot:
+    extends:
+      file: docker-compose-certbot.yml
+      service: certbot
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-teleport
+    hostname: nginx-teleport
+    deploy:
+      replicas: 1
+    volumes:
+      - type: bind
+        source: ./nginx/nginx.conf.template
+        target: /etc/nginx/templates/nginx.conf.template
+    networks:
+     - teleport
+    ports:
+      - 443:443
+    depends_on:
+      - teleport-proxy
+    environment:
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+      - TELEPORT_EXTERNAL_HOSTNAME=${TELEPORT_EXTERNAL_HOSTNAME:-teleport.mydomain.test}
+      - TELEPORT_PROXY=${TELEPORT_PROXY:-teleport-proxy}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "5"
+    restart: always
+
+  # The configure container starts, generates a config, writes it to
+  # /etc/teleport/teleport.yaml and then immediately exits.
+  configure-proxy:
+    image: nginx:alpine
+    container_name: configure-proxy
+    entrypoint: /bin/sh
+    command: -x -c 'if [ ! -f /etc/teleport/$(basename $$TELEPORT_CONFIG_TEMPLATE .template) ]; then /teleport/bin/configure.sh; fi'
+    environment:
+      - TELEPORT_ACME_EMAIL_DOMAIN=${TELEPORT_ACME_EMAIL_DOMAIN:-sample@mydomain.test}
+      - TELEPORT_CLUSTER_NAME=${TELEPORT_CLUSTER_NAME:-teleport.mydomain.test}
+      - NODE_LABELS=${NODE_LABELS:-env=test cloud=docker role=proxy}
+      - TELEPORT_CONFIG_TEMPLATE=${TELEPORT_CONFIG_TEMPLATE:-teleport-proxy.yaml.template}
+      - TELEPORT_PROXY_TOKEN=${TELEPORT_PROXY_TOKEN:-foo}
+    networks:
+     - teleport
+    volumes:
+      - ./teleport/config:/etc/teleport
+      - ./teleport/bin:/teleport/bin
+  configure-auth:
+    image: nginx:alpine
+    container_name: configure-auth
+    entrypoint: /bin/sh
+    command: -x -c 'if [ ! -f /etc/teleport/$(basename $$TELEPORT_CONFIG_TEMPLATE .template) ]; then /teleport/bin/configure.sh; fi'
+    environment:
+      - TELEPORT_ACME_EMAIL_DOMAIN=${TELEPORT_ACME_EMAIL_DOMAIN:-sample@mydomain.test}
+      - TELEPORT_CLUSTER_NAME=${TELEPORT_CLUSTER_NAME:-teleport.mydomain.test}
+      - NODE_LABELS=${NODE_LABELS:-env=test cloud=docker role=proxy}
+      - TELEPORT_CONFIG_TEMPLATE=${TELEPORT_CONFIG_TEMPLATE:-teleport-auth.yaml.template}
+      - TELEPORT_PROXY_TOKEN=${TELEPORT_PROXY_TOKEN:-foo}
+    networks:
+     - teleport
+    volumes:
+      - ./teleport/config:/etc/teleport
+      - ./teleport/bin:/teleport/bin
+
+  # This container depends on the config written by the configure container above, so it
+  # sleeps for a second on startup to allow the configure container to run first.
+  teleport-proxy:
+    image: public.ecr.aws/gravitational/teleport:${TELEPORT_VERSION:-13.0.2}
+      #container_name: teleport-proxy
+    hostname: teleport-proxy
+    deploy:
+      replicas: 1
+    entrypoint: /bin/sh
+    command: -c "sleep 2 && /usr/bin/dumb-init teleport start -c /etc/teleport/teleport-proxy.yaml"
+    networks:
+     - teleport
+    volumes:
+      - ./teleport/config:/etc/teleport
+        #- ./teleport/proxy/data:/var/lib/teleport
+      - ./certbot/data/archive:/etc/letsencrypt/archive
+      - ./certbot/data/live:/etc/letsencrypt/live
+    depends_on:
+      - certbot
+      - configure-proxy
+      - teleport-auth
+
+  teleport-auth:
+    image: public.ecr.aws/gravitational/teleport:${TELEPORT_VERSION:-13.0.2}
+    container_name: teleport-auth
+      #hostname: teleport-auth
+    deploy:
+      replicas: 1
+    entrypoint: /bin/sh
+    command: -c "sleep 2 && /usr/bin/dumb-init teleport start -c /etc/teleport/teleport-auth.yaml"
+    networks:
+     - teleport
+    volumes:
+      - ./teleport/config:/etc/teleport
+      - ./teleport/auth/data:/var/lib/teleport
+    depends_on:
+      - certbot
+      - configure-auth
+
+networks:
+  teleport:
+    enable_ipv6: false
+    driver: bridge

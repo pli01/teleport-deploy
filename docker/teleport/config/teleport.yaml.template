@@ -1,0 +1,39 @@
+#
+# A Sample Teleport configuration template file.
+#
+version: v3
+teleport:
+  data_dir: /var/lib/teleport
+  log:
+    output: stderr
+    severity: INFO
+    format:
+      output: text
+  ca_pin: ""
+  diag_addr: ""
+auth_service:
+  enabled: "yes"
+  listen_addr: 0.0.0.0:3025
+  cluster_name: ${TELEPORT_CLUSTER_NAME}
+  proxy_listener_mode: multiplex
+ssh_service:
+  enabled: "yes"
+  labels:
+${TELEPORT_NODE_LABELS}
+  commands:
+  - name: hostname
+    command: [hostname]
+    period: 1m0s
+proxy_service:
+  enabled: "yes"
+  web_listen_addr: 0.0.0.0:3080
+  public_addr: ${TELEPORT_CLUSTER_NAME}:443
+  https_keypairs: []
+  https_keypairs_reload_interval: 0s
+  acme:
+    enabled: "yes"
+    email: ${TELEPORT_ACME_EMAIL_DOMAIN}
+  # uncomment if using your own cert or using certbot (disabled acme)
+  # https_cert_file: /etc/letsencrypt/live/${TELEPORT_CLUSTER_NAME}/fullchain.pem
+  # https_key_file: /etc/letsencrypt/live/${TELEPORT_CLUSTER_NAME}/privkey.pem
+
