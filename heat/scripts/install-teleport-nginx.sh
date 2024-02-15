@@ -42,7 +42,7 @@ done)"
 
 # install nginx
 apt-get update -qy
-apt-get install -qy nginx
+apt-get install -qy nginx libnginx-mod-stream
 
 cp -f /etc/nginx/nginx.conf /etc/nginx/nginx.conf.back
 ( envsubst '${TELEPORT_EXTERNAL_HOSTNAME}' | tee /etc/nginx/nginx.conf ) <<'EOF'
