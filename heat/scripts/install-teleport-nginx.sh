@@ -114,12 +114,12 @@ teleport:
   diag_addr: ""
 auth_service:
   enabled: "yes"
-  listen_addr: 0.0.0.0:3025
+  listen_addr: 127.0.0.1:3025
   cluster_name: ${TELEPORT_CLUSTER_NAME}
   proxy_listener_mode: multiplex
 proxy_service:
   enabled: "yes"
-  web_listen_addr: 0.0.0.0:3080
+  web_listen_addr: 127.0.0.1:3080
   public_addr: ${TELEPORT_EXTERNAL_HOSTNAME}:443
   https_keypairs: []
   https_keypairs_reload_interval: 0s
@@ -137,6 +137,14 @@ ${NODE_LABELS}
 EOF
 
 chmod 600 /etc/teleport.yaml
+
+if [ -n "$http_proxy" ] ; then
+  cat <<EOF > /etc/default/teleport
+HTTP_PROXY=$http_proxy
+HTTPS_PROXY=$http_proxy
+NO_PROXY=localhost,127.0.0.1,$no_proxy
+EOF
+fi
 
 echo "Start teleport"
 sudo systemctl enable teleport
