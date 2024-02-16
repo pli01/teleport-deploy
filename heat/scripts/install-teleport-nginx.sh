@@ -121,6 +121,7 @@ proxy_service:
   enabled: "yes"
   web_listen_addr: 127.0.0.1:3080
   public_addr: ${TELEPORT_EXTERNAL_HOSTNAME}:443
+  proxy_protocol: on
   https_keypairs: []
   https_keypairs_reload_interval: 0s
   acme:
