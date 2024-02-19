@@ -22,10 +22,12 @@ proxy_service:
   enabled: "yes"
   web_listen_addr: 0.0.0.0:3080
   public_addr: ${TELEPORT_CLUSTER_NAME}:443
+  proxy_protocol: ${PROXY_PROTOCOL}
   https_keypairs: []
   https_keypairs_reload_interval: 0s
-  https_cert_file: /etc/letsencrypt/live/${TELEPORT_CLUSTER_NAME}/fullchain.pem
-  https_key_file: /etc/letsencrypt/live/${TELEPORT_CLUSTER_NAME}/privkey.pem
+  trust_x_forwarded_for: true
+  https_cert_file: ${HTTPS_CERT_FILE}
+  https_key_file: ${HTTPS_KEY_FILE}
 #  acme:
 #    enabled: "yes"
 #    email: ${TELEPORT_ACME_EMAIL_DOMAIN}

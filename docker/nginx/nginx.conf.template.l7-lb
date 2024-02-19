@@ -1,0 +1,32 @@
+server {
+    server_name ${TELEPORT_EXTERNAL_HOSTNAME} *.${TELEPORT_EXTERNAL_HOSTNAME};
+    client_max_body_size 1024M;
+
+    location / {
+        proxy_set_header Host $http_host;
+        proxy_pass https://${TELEPORT_PROXY}:3080;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    listen [::]:443 ssl;
+    listen 443 ssl;
+
+    ssl_certificate /etc/letsencrypt/live/${TELEPORT_EXTERNAL_HOSTNAME}/fullchain.pem; # change this to your actual domain/path
+    ssl_certificate_key /etc/letsencrypt/live/${TELEPORT_EXTERNAL_HOSTNAME}/privkey.pem; # change this to your actual domain/path
+}
+
+# optional section - listen for HTTP requests on port 80 and redirect them to HTTPS on 443
+server {
+    server_name ${TELEPORT_EXTERNAL_HOSTNAME} *.${TELEPORT_EXTERNAL_HOSTNAME};
+
+    # update to your own public domain
+    if ($host = ${TELEPORT_EXTERNAL_HOSTNAME}) {
+        return 301 https://$host$request_uri;
+    }
+
+    listen [::]:80;
+    listen 80;
+    return 404;
+}

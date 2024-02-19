@@ -1,0 +1,29 @@
+version: '3.8'
+networks:
+  teleport:
+    driver: bridge
+services:
+  # The configure container starts, ask to generate a cert, writes it
+  # then immediately exits.
+  certbot:
+    container_name: certbot
+    image: certbot/certbot:latest
+#    command: >-
+#             certonly --standalone -n
+#             -d ${TELEPORT_CLUSTER_NAME},*.${TELEPORT_CLUSTER_NAME}
+#             --email=${TELEPORT_ACME_EMAIL_DOMAIN} --agree-tos --no-eff-email
+#
+    command: >-
+             certonly --manual --preferred-challenges=dns
+             -d ${TELEPORT_CLUSTER_NAME},*.${TELEPORT_CLUSTER_NAME}
+             --email=${TELEPORT_ACME_EMAIL_DOMAIN} --agree-tos  --no-eff-email
+             --server https://acme-v02.api.letsencrypt.org/directory
+    environment:
+      - TELEPORT_ACME_EMAIL_DOMAIN=${TELEPORT_ACME_EMAIL_DOMAIN:-sample@mydomain.test}
+      - TELEPORT_CLUSTER_NAME=${TELEPORT_CLUSTER_NAME:-teleport.mydomain.test}
+    networks:
+     - teleport
+    ports:
+      - 80:80
+    volumes:
+      - ./certbot/data:/etc/letsencrypt
