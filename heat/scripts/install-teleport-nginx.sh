@@ -143,15 +143,44 @@ if [ -n "$http_proxy" ] ; then
   cat <<EOF > /etc/default/teleport
 HTTP_PROXY=$http_proxy
 HTTPS_PROXY=$http_proxy
-NO_PROXY=localhost,127.0.0.1,*,$no_proxy
+NO_PROXY=localhost,127.0.0.1,$no_proxy
 EOF
 fi
 
 echo "Start teleport"
+sudo systemctl daemon-reload
 sudo systemctl enable teleport
 sudo systemctl start teleport
 sleep ${ALIVE_CHECK_DELAY}
 systemctl status teleport
+
+test_result=1
+timeout=120
+until [ "$timeout" -le 0 -o "$test_result" -eq "0" ] ; do
+ curl -s  https://${TELEPORT_EXTERNAL_HOSTNAME}/webapi/ping |jq -re '.server_version'
+ test_result=$?
+ if [ "$test_result" -gt 0 ] ;then
+     echo "Retry $timeout seconds: $test_result";
+     (( timeout-- ))
+     sleep 1
+ fi
+done
+if [ "$test_result" -gt 0 ] ;then
+        test_status=ERROR
+        echo "$test_status: teleport not ready $test_result"
+        exit $test_result
+fi
+# restart after acme ready and change no_proxy for web app
+if [ -n "$http_proxy" ] ; then
+  cat <<EOF > /etc/default/teleport
+HTTP_PROXY=$http_proxy
+HTTPS_PROXY=$http_proxy
+NO_PROXY=localhost,127.0.0.1,$no_proxy,*
+EOF
+fi
+
+sudo systemctl daemon-reload
+sudo systemctl restart teleport
 
 echo "Create initial user"
 tctl users add teleport-admin --roles=editor,access --logins=root,debian,cloudadm,ubuntu
