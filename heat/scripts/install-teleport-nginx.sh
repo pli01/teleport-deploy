@@ -143,7 +143,7 @@ if [ -n "$http_proxy" ] ; then
   cat <<EOF > /etc/default/teleport
 HTTP_PROXY=$http_proxy
 HTTPS_PROXY=$http_proxy
-NO_PROXY=localhost,127.0.0.1,$no_proxy
+NO_PROXY=localhost,127.0.0.1,*,$no_proxy
 EOF
 fi
 
