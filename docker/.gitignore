@@ -1,4 +1,5 @@
 .env*
 teleport/config/*.yaml
 teleport/data/
+teleport/auth/
 certbot

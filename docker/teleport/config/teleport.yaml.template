@@ -28,6 +28,7 @@ proxy_service:
   enabled: "yes"
   web_listen_addr: 0.0.0.0:3080
   public_addr: ${TELEPORT_CLUSTER_NAME}:443
+  proxy_protocol: on
   https_keypairs: []
   https_keypairs_reload_interval: 0s
   acme:

@@ -75,11 +75,18 @@ Generate certificate with certbot/letsencrypt.
 File are generated in certbot/data/archive and certbot/data/live
 
 ```
-docker-compose -f docker-compose-certbot.yml up -d
+## certbot acme
+#docker-compose -f docker-compose-certbot.yml up -d
+## certbot manual dns
+docker-compose -f docker-compose-certbot-dns.yml run certbot
 ```
 
 ```
-docker-compose -f docker-compose-multi.yml up -d
+# l4-ssl.yml
+docker-compose -f docker-compose-multi-l4-ssl.yml up -d
+
+# l7-ssl.yml
+docker-compose -f docker-compose-multi-l7-ssl.yml up -d
 ```
 
 
@@ -117,4 +124,10 @@ docker-compose -f docker-compose-multi-etcd.yml up -d
 Scale teleport-proxy or teleport-auth
 ```
 docker-compose -f docker-compose-multi-etcd.yml up --scale teleport-proxy=2 teleport-auth=2
+```
+
+## Create users
+
+```
+docker exec -it teleport-auth bash -c 'tctl users add teleport-admin --roles=editor,access --logins=root,debian,ubuntu'
 ```
